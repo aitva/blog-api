@@ -12,17 +12,24 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/ulule/limiter"
 )
 
+var (
+	errUnknownID    = errors.New("unknown ID")
+	errUnknownTitle = errors.New("unknown title")
+)
+
 type article struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type server struct {
-	db   *bolt.DB
-	rate limiter.Rate
+	db  *bolt.DB
+	mux *mux.Router
 }
 
 func main() {
@@ -38,15 +45,16 @@ func main() {
 	store := limiter.NewMemoryStore()
 	limit := limiter.NewLimiter(store, limiter.Rate{
 		Period: 1 * time.Minute,
-		Limit:  int64(100),
+		Limit:  int64(264),
 	})
 	httpLimit := limiter.NewHTTPMiddleware(limit)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", srv.notFoundHandler)
-	mux.HandleFunc("/article/", srv.articleHandler)
-	mux.HandleFunc("/article/all", srv.getAllArticleHandler)
-	h := httpLimit.Handler(mux)
+	srv.mux = mux.NewRouter()
+	srv.mux.HandleFunc("/", srv.notFoundHandler)
+	srv.mux.HandleFunc("/article/{id}/{title}/", srv.getArticleHandler).Methods("GET")
+	srv.mux.HandleFunc("/article/{id}/", srv.postArticleHandler).Methods("POST")
+	srv.mux.HandleFunc("/articles/{id}/", srv.getArticlesHandler)
+	h := httpLimit.Handler(srv.mux)
 	h = corsMiddleware(h)
 	h = handlers.LoggingHandler(os.Stdout, h)
 	http.ListenAndServe(":8080", h)
@@ -76,29 +84,20 @@ func (s *server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "nothing here...")
 }
 
-func (s *server) articleHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		s.getArticleHandler(w, r)
-	case "POST":
-		s.postArticleHandler(w, r)
-	default:
-		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
-	}
-}
-
 func (s *server) postArticleHandler(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	id := v.Get("id")
-	if id == "" {
+	params := mux.Vars(r)
+	id, ok := params["id"]
+	if !ok || id == "" {
 		writeError(w, http.StatusBadRequest, "user ID is missing")
 		return
 	}
+
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		writeError(w, http.StatusBadRequest, "invalid content-type")
 		return
 	}
+
 	article := &article{}
 	err := json.NewDecoder(r.Body).Decode(article)
 	if err != nil {
@@ -128,32 +127,35 @@ func (s *server) postArticleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
-	unknownID := errors.New("user ID is unknown")
-	v := r.URL.Query()
-	id := v.Get("id")
-	if id == "" {
+	params := mux.Vars(r)
+	id, ok := params["id"]
+	if !ok || id == "" {
 		writeError(w, http.StatusBadRequest, "user ID is missing")
 		return
 	}
-	title := v.Get("title")
-	if title == "" {
+	title, ok := params["title"]
+	if !ok || title == "" {
 		writeError(w, http.StatusBadRequest, "article title is missing")
 		return
 	}
+
 	a := &article{}
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(id))
 		if b == nil {
-			return unknownID
+			return errUnknownID
 		}
 		data := b.Get([]byte(title))
+		if data == nil {
+			return errUnknownTitle
+		}
 		return gob.NewDecoder(bytes.NewReader(data)).Decode(a)
 	})
+	if err == errUnknownID || err == errUnknownTitle {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
-		if err == unknownID {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 		log.Println(err)
 		writeError(w, http.StatusInternalServerError, "fail to access DB")
 		return
@@ -162,24 +164,24 @@ func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(a)
 }
 
-func (s *server) getAllArticleHandler(w http.ResponseWriter, r *http.Request) {
-	unknownID := errors.New("user ID is unknown")
+func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
 		return
 	}
 
-	v := r.URL.Query()
-	id := v.Get("id")
-	if id == "" {
+	params := mux.Vars(r)
+	id, ok := params["id"]
+	if !ok || id == "" {
 		writeError(w, http.StatusBadRequest, "user ID is missing")
 		return
 	}
+
 	var articles []*article
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(id))
 		if b == nil {
-			return unknownID
+			return errUnknownID
 		}
 		return b.ForEach(func(k, v []byte) error {
 			a := &article{}
@@ -191,11 +193,11 @@ func (s *server) getAllArticleHandler(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 	})
+	if err == errUnknownID {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
-		if err == unknownID {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 		log.Println(err)
 		writeError(w, http.StatusInternalServerError, "fail to access DB")
 		return
