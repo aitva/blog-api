@@ -22,6 +22,8 @@ type server struct {
 
 func main() {
 	var err error
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	srv := &server{}
 	srv.db, err = bolt.Open("blog.db", 0666, nil)
 	if err != nil {
@@ -45,11 +47,15 @@ func (s *server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) articleHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Access-Control-Allow-Method", "POST, GET, OPTIONS")
+	w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
 	switch r.Method {
 	case "GET":
 		s.getArticle(w, r)
 	case "POST":
 		s.postArticle(w, r)
+	case "OPTIONS":
+		w.WriteHeader(200)
 	default:
 		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
 	}
@@ -120,6 +126,7 @@ func (s *server) getArticle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == unknownID {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		log.Println(err)
 		writeError(w, http.StatusInternalServerError, "fail to access DB")
