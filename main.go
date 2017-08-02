@@ -7,8 +7,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/boltdb/bolt"
+	"github.com/gorilla/handlers"
 )
 
 type article struct {
@@ -29,9 +31,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.HandleFunc("/", srv.notFoundHandler)
-	http.HandleFunc("/article/", srv.articleHandler)
-	http.ListenAndServe(":8080", nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", srv.notFoundHandler)
+	mux.HandleFunc("/article/", srv.articleHandler)
+	mux.HandleFunc("/article/all", srv.getAllArticleHandler)
+	h := handlers.LoggingHandler(os.Stdout, corsMiddleware(mux))
+	http.ListenAndServe(":8080", h)
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
@@ -40,28 +45,36 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	w.Write([]byte(msg))
 }
 
+func corsMiddleware(h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Access-Control-Allow-Method", "POST, GET, OPTIONS")
+		w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}
+}
+
 func (s *server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	writeError(w, http.StatusNotFound, "nothing here...")
 }
 
 func (s *server) articleHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Access-Control-Allow-Method", "POST, GET, OPTIONS")
-	w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
 	switch r.Method {
 	case "GET":
-		s.getArticle(w, r)
+		s.getArticleHandler(w, r)
 	case "POST":
-		s.postArticle(w, r)
-	case "OPTIONS":
-		w.WriteHeader(200)
+		s.postArticleHandler(w, r)
 	default:
 		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
 	}
 }
 
-func (s *server) postArticle(w http.ResponseWriter, r *http.Request) {
+func (s *server) postArticleHandler(w http.ResponseWriter, r *http.Request) {
 	v := r.URL.Query()
 	id := v.Get("id")
 	if id == "" {
@@ -101,7 +114,7 @@ func (s *server) postArticle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) getArticle(w http.ResponseWriter, r *http.Request) {
+func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
 	unknownID := errors.New("user ID is unknown")
 	v := r.URL.Query()
 	id := v.Get("id")
@@ -134,4 +147,46 @@ func (s *server) getArticle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(a)
+}
+
+func (s *server) getAllArticleHandler(w http.ResponseWriter, r *http.Request) {
+	unknownID := errors.New("user ID is unknown")
+	if r.Method != "GET" {
+		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
+		return
+	}
+
+	v := r.URL.Query()
+	id := v.Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "user ID is missing")
+		return
+	}
+	var articles []*article
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(id))
+		if b == nil {
+			return unknownID
+		}
+		return b.ForEach(func(k, v []byte) error {
+			a := &article{}
+			err := gob.NewDecoder(bytes.NewReader(v)).Decode(a)
+			if err != nil {
+				return err
+			}
+			articles = append(articles, a)
+			return nil
+		})
+	})
+	if err != nil {
+		if err == unknownID {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(articles)
 }

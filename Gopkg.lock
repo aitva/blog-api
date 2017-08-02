@@ -8,6 +8,12 @@
   version = "v1.3.1"
 
 [[projects]]
+  name = "github.com/gorilla/handlers"
+  packages = ["."]
+  revision = "a4043c62cc2329bacda331d33fc908ab11ef0ec3"
+  version = "v1.2.1"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
@@ -16,6 +22,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2490595b5a986d40f8feea49f8f89568adc58015686420c80138f606c95baa51"
+  inputs-digest = "a5f02ca90b156a74610a141eb069ddd4a9ff064c1c1035d49aa15ad4913ae1e3"
   solver-name = "gps-cdcl"
   solver-version = 1
