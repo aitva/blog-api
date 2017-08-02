@@ -9,7 +9,7 @@ Add an article in the database.
 
 - **URL**: 
 
-    /article/
+    /article/{id}/
 
 - **Method**:
 
@@ -18,7 +18,7 @@ Add an article in the database.
 - **URL Param**:
 
     **required**: </br>
-    `id=[string]`
+    `id=[string]` represents an user ID 
 
 - **Data Param**:
 
@@ -48,7 +48,7 @@ Get an article from the database.
 
 - **URL**: 
 
-    /article/
+    /article/{id}/{title}
 
 - **Method**:
 
@@ -57,8 +57,8 @@ Get an article from the database.
 - **URL Param**:
 
     **required**: </br>
-    `id=[string]` </br>
-    `title=[string]`
+    `id=[string]` represent an user ID </br>
+    `title=[string]` represent the title of an article
 
 - **Data Param**:
 
@@ -80,6 +80,9 @@ Get an article from the database.
     **Code**: `400 Bad Request` </br>
     **Content**: `error as plain/text`
 
+    **Code**: `404 Bad Request` </br>
+    **Content**: `error as plain/text`
+
     **Code**: `500 Internal Server Error` </br>
     **Content**: `error as plain/text`
 
@@ -89,7 +92,7 @@ Get all article from an user.
 
 - **URL**: 
 
-    /articles/
+    /articles/{id}/{order}/
 
 - **Method**:
 
@@ -98,10 +101,10 @@ Get all article from an user.
 - **URL Param**:
 
     **required**: </br>
-    `id=[string]`
+    `id=[string]` represent an user ID
 
     **optional**: </br>
-    `order=[desc/asc]`
+    `order=[desc|asc]` ask the server to order in an ascending or descending way 
 
 - **Data Param**:
 

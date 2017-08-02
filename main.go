@@ -155,7 +155,7 @@ func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
 		return gob.NewDecoder(bytes.NewReader(data)).Decode(a)
 	})
 	if err == errUnknownID || err == errUnknownTitle {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err == errUnknownID {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if err != nil {
