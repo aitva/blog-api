@@ -80,7 +80,7 @@ Get an article from the database.
     **Code**: `400 Bad Request` </br>
     **Content**: `error as plain/text`
 
-    **Code**: `404 Bad Request` </br>
+    **Code**: `404 Not Found` </br>
     **Content**: `error as plain/text`
 
     **Code**: `500 Internal Server Error` </br>
@@ -127,6 +127,9 @@ Get all article from an user.
 - **Error Response**: 
 
     **Code**: `400 Bad Request` </br>
+    **Content**: `error as plain/text`
+
+    **Code**: `404 Not Found` </br>
     **Content**: `error as plain/text`
 
     **Code**: `500 Internal Server Error` </br>
