@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -26,6 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	http.HandleFunc("/", srv.notFoundHandler)
 	http.HandleFunc("/article/", srv.articleHandler)
 	http.ListenAndServe(":8080", nil)
 }
@@ -36,11 +38,20 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	w.Write([]byte(msg))
 }
 
+func (s *server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	writeError(w, http.StatusNotFound, "nothing here...")
+}
+
 func (s *server) articleHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	switch r.Method {
 	case "GET":
+		s.getArticle(w, r)
 	case "POST":
 		s.postArticle(w, r)
+	default:
+		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
 	}
 }
 
@@ -78,4 +89,42 @@ func (s *server) postArticle(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
+}
+
+func (s *server) getArticle(w http.ResponseWriter, r *http.Request) {
+	unknownID := errors.New("user ID is unknown")
+	v := r.URL.Query()
+	id := v.Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "user ID is missing")
+		return
+	}
+	title := v.Get("title")
+	if title == "" {
+		writeError(w, http.StatusBadRequest, "article title is missing")
+		return
+	}
+	a := &article{}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(id))
+		if b == nil {
+			return unknownID
+		}
+		data := b.Get([]byte(title))
+		return gob.NewDecoder(bytes.NewReader(data)).Decode(a)
+	})
+	if err != nil {
+		if err == unknownID {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(a)
 }
