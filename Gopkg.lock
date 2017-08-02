@@ -2,16 +2,40 @@
 
 
 [[projects]]
+  name = "github.com/ant0ine/go-json-rest"
+  packages = ["rest","rest/trie"]
+  revision = "ce4b71cdf7ba29ef443d704bd923f5bbf281ee30"
+  version = "v3.3.2"
+
+[[projects]]
   name = "github.com/boltdb/bolt"
   packages = ["."]
   revision = "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
   version = "v1.3.1"
 
 [[projects]]
+  name = "github.com/garyburd/redigo"
+  packages = ["internal","redis"]
+  revision = "433969511232c397de61b1442f9fd49ec06ae9ba"
+  version = "v1.1.0"
+
+[[projects]]
   name = "github.com/gorilla/handlers"
   packages = ["."]
   revision = "a4043c62cc2329bacda331d33fc908ab11ef0ec3"
   version = "v1.2.1"
+
+[[projects]]
+  name = "github.com/patrickmn/go-cache"
+  packages = ["."]
+  revision = "1881a9bccb818787f68c52bfba648c6cf34c34fa"
+  version = "v2.0.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/ulule/limiter"
+  packages = ["."]
+  revision = "c242da0b4c9524723c5a2dc8e7d49c228d1bb33c"
 
 [[projects]]
   branch = "master"
@@ -22,6 +46,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a5f02ca90b156a74610a141eb069ddd4a9ff064c1c1035d49aa15ad4913ae1e3"
+  inputs-digest = "e4d5c553e02c43de42593716b0632a24bdf54b19df98543c433f72e211c3b216"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/gorilla/handlers"
+	"github.com/ulule/limiter"
 )
 
 type article struct {
@@ -19,7 +21,8 @@ type article struct {
 }
 
 type server struct {
-	db *bolt.DB
+	db   *bolt.DB
+	rate limiter.Rate
 }
 
 func main() {
@@ -31,11 +34,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	store := limiter.NewMemoryStore()
+	limit := limiter.NewLimiter(store, limiter.Rate{
+		Period: 1 * time.Minute,
+		Limit:  int64(100),
+	})
+	httpLimit := limiter.NewHTTPMiddleware(limit)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.notFoundHandler)
 	mux.HandleFunc("/article/", srv.articleHandler)
 	mux.HandleFunc("/article/all", srv.getAllArticleHandler)
-	h := handlers.LoggingHandler(os.Stdout, corsMiddleware(mux))
+	h := httpLimit.Handler(mux)
+	h = corsMiddleware(h)
+	h = handlers.LoggingHandler(os.Stdout, h)
 	http.ListenAndServe(":8080", h)
 }
 
@@ -45,8 +58,8 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	w.Write([]byte(msg))
 }
 
-func corsMiddleware(h http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func corsMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Access-Control-Allow-Origin", "*")
 		w.Header().Add("Access-Control-Allow-Method", "POST, GET, OPTIONS")
 		w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
@@ -55,7 +68,7 @@ func corsMiddleware(h http.Handler) http.HandlerFunc {
 			return
 		}
 		h.ServeHTTP(w, r)
-	}
+	})
 }
 
 func (s *server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
