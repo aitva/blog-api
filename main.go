@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -54,6 +55,7 @@ func main() {
 	srv.mux.HandleFunc("/article/{id}/{title}/", srv.getArticleHandler).Methods("GET")
 	srv.mux.HandleFunc("/article/{id}/", srv.postArticleHandler).Methods("POST")
 	srv.mux.HandleFunc("/articles/{id}/", srv.getArticlesHandler)
+	srv.mux.HandleFunc("/articles/{id}/{sort}", srv.getArticlesHandler)
 	h := httpLimit.Handler(srv.mux)
 	h = corsMiddleware(h)
 	h = handlers.LoggingHandler(os.Stdout, h)
@@ -104,6 +106,7 @@ func (s *server) postArticleHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "fail to parse JSON")
 		return
 	}
+	article.Timestamp = time.Now()
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(id))
 		if err != nil {
@@ -202,6 +205,19 @@ func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "fail to access DB")
 		return
 	}
+
+	order, ok := params["sort"]
+	if ok {
+		if order == "asc" {
+			sort.Slice(articles, func(i, j int) bool { return articles[i].Timestamp.Before(articles[j].Timestamp) })
+		} else if order == "desc" {
+			sort.Slice(articles, func(i, j int) bool { return articles[i].Timestamp.After(articles[j].Timestamp) })
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid sort parameter")
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(articles)
 }
