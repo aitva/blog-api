@@ -37,8 +37,18 @@ func main() {
 	var err error
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	addr := os.Getenv("BLOG_API_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+
+	db := os.Getenv("BLOG_API_DB")
+	if db == "" {
+		db = "blog.db"
+	}
+
 	srv := &server{}
-	srv.db, err = bolt.Open("blog.db", 0666, nil)
+	srv.db, err = bolt.Open(db, 0666, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,14 +62,20 @@ func main() {
 
 	srv.mux = mux.NewRouter()
 	srv.mux.HandleFunc("/", srv.notFoundHandler)
+	// Article handlers.
 	srv.mux.HandleFunc("/article/{id}/{title}/", srv.getArticleHandler).Methods("GET")
+	srv.mux.HandleFunc("/article/{id}/{title}/", srv.deleteArticleHandler).Methods("DELETE")
 	srv.mux.HandleFunc("/article/{id}/", srv.postArticleHandler).Methods("POST")
-	srv.mux.HandleFunc("/articles/{id}/", srv.getArticlesHandler)
-	srv.mux.HandleFunc("/articles/{id}/{sort}", srv.getArticlesHandler)
+	// Articles handlers.
+	srv.mux.HandleFunc("/articles/{id}/", srv.getArticlesHandler).Methods("GET")
+	srv.mux.HandleFunc("/articles/{id}/{sort}", srv.getArticlesHandler).Methods("GET")
+	srv.mux.HandleFunc("/articles/{id}/", srv.deleteArticlesHandler).Methods("DELETE")
 	h := httpLimit.Handler(srv.mux)
 	h = corsMiddleware(h)
 	h = handlers.LoggingHandler(os.Stdout, h)
-	http.ListenAndServe(":8080", h)
+
+	log.Println("listening on:", addr)
+	log.Fatal(http.ListenAndServe(addr, h))
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
@@ -100,31 +116,40 @@ func (s *server) postArticleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	article := &article{}
-	err := json.NewDecoder(r.Body).Decode(article)
+	a := &article{}
+	err := json.NewDecoder(r.Body).Decode(a)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "fail to parse JSON")
 		return
 	}
-	article.Timestamp = time.Now()
+	a.Timestamp = time.Now()
+
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(id))
 		if err != nil {
 			return err
 		}
 		var buf bytes.Buffer
-		err = gob.NewEncoder(&buf).Encode(article)
+		err = gob.NewEncoder(&buf).Encode(a)
 		if err != nil {
 			return err
 		}
-		err = b.Put([]byte(article.Title), buf.Bytes())
+		err = b.Put([]byte(a.Title), buf.Bytes())
 		if err != nil {
 			return err
 		}
 		return nil
 	})
 	if err != nil {
+		log.Println("fail to access DB:", err)
 		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(a)
+	if err != nil {
+		log.Println("fail to encode article:", err)
+		writeError(w, http.StatusInternalServerError, "fail to encode response")
 		return
 	}
 }
@@ -133,12 +158,12 @@ func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, ok := params["id"]
 	if !ok || id == "" {
-		writeError(w, http.StatusBadRequest, "user ID is missing")
+		writeError(w, http.StatusBadRequest, "missing ID")
 		return
 	}
 	title, ok := params["title"]
 	if !ok || title == "" {
-		writeError(w, http.StatusBadRequest, "article title is missing")
+		writeError(w, http.StatusBadRequest, "missing title")
 		return
 	}
 
@@ -167,16 +192,46 @@ func (s *server) getArticleHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(a)
 }
 
-func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeError(w, http.StatusBadRequest, "unexpected HTTP method")
-		return
-	}
-
+func (s *server) deleteArticleHandler(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, ok := params["id"]
 	if !ok || id == "" {
-		writeError(w, http.StatusBadRequest, "user ID is missing")
+		writeError(w, http.StatusBadRequest, "missing ID")
+		return
+	}
+	title, ok := params["title"]
+	if !ok || title == "" {
+		writeError(w, http.StatusBadRequest, "missing title")
+		return
+	}
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(id))
+		if b == nil {
+			return errUnknownID
+		}
+		data := b.Get([]byte(title))
+		if data == nil {
+			return errUnknownTitle
+		}
+		return b.Delete([]byte(title))
+	})
+	if err == errUnknownID || err == errUnknownTitle {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
+}
+
+func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	id, ok := params["id"]
+	if !ok || id == "" {
+		writeError(w, http.StatusBadRequest, "missing ID")
 		return
 	}
 
@@ -220,4 +275,30 @@ func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(articles)
+}
+
+func (s *server) deleteArticlesHandler(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	id, ok := params["id"]
+	if !ok || id == "" {
+		writeError(w, http.StatusBadRequest, "missing ID")
+		return
+	}
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(id))
+		if b == nil {
+			return errUnknownID
+		}
+		return tx.DeleteBucket([]byte(id))
+	})
+	if err == errUnknownID {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "fail to access DB")
+		return
+	}
 }

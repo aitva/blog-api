@@ -32,7 +32,13 @@ Add an article in the database.
 - **Success Response**: 
 
     **Code**: `200 OK` </br>
-    **Content**: none
+    **Content**:
+    ```json
+    {
+        "title": "My Article",
+        "content": "Whatever I want to say!"
+    }
+    ```
 
 - **Error Response**: 
 
@@ -74,6 +80,33 @@ Get an article from the database.
         "content": "Whatever I want to say!"
     }
     ```
+
+## Delete Article
+
+Delete an article from the database.
+
+- **URL**:
+
+    /article/{id}/{title}
+
+- **Method**:
+
+    DELETE
+
+- **URL Param**:
+
+    **required**: </br>
+    `id=[string]` represent an user ID </br>
+    `title=[string]` represent the title of an article
+
+- **Data Param**:
+
+    None
+
+- **Success Response**: 
+
+    **Code**: `200 OK` </br>
+    **Content**: None
 
 - **Error Response**: 
 
@@ -123,6 +156,43 @@ Get all article from an user.
         "content": "Whatever I want to add!"
     }]
     ```
+
+- **Error Response**: 
+
+    **Code**: `400 Bad Request` </br>
+    **Content**: `error as plain/text`
+
+    **Code**: `404 Not Found` </br>
+    **Content**: `error as plain/text`
+
+    **Code**: `500 Internal Server Error` </br>
+    **Content**: `error as plain/text`
+
+## Delete All Article
+
+Delete all article from an user.
+
+- **URL**:
+
+    /articles/{id}/
+
+- **Method**:
+
+    DELETE
+
+- **URL Param**:
+
+    **required**: </br>
+    `id=[string]` represent an user ID
+
+- **Data Param**:
+
+    None
+
+- **Success Response**: 
+
+    **Code**: `200 OK` </br>
+    **Content**: None
 
 - **Error Response**: 
 
