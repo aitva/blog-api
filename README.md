@@ -131,6 +131,11 @@ Get all article from an user.
 
     GET
 
+- **Headers**:
+
+    **optional**: </br>
+    `Accept: text/xml` ask the server to send data as XML
+
 - **URL Param**:
 
     **required**: </br>

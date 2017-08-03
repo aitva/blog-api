@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -23,9 +25,9 @@ var (
 )
 
 type article struct {
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
+	Title     string    `json:"title" xml:"title"`
+	Content   string    `json:"content" xml:"content"`
+	Timestamp time.Time `json:"timestamp" xml:"timestamp"`
 }
 
 type server struct {
@@ -87,7 +89,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 func corsMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Access-Control-Allow-Origin", "*")
-		w.Header().Add("Access-Control-Allow-Method", "POST, GET, OPTIONS")
+		w.Header().Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
 		w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -273,8 +275,26 @@ func (s *server) getArticlesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(articles)
+	accept := r.Header.Get("Accept")
+	asXML := strings.Contains(accept, "text/xml")
+	asJSON := strings.Contains(accept, "application/json")
+	if asXML && !asJSON {
+		w.Header().Set("Content-Type", "text/xml")
+		err = xml.NewEncoder(w).Encode(struct {
+			XMLName  xml.Name
+			Articles []*article `xml:"article"`
+		}{
+			XMLName:  xml.Name{Local: "articles"},
+			Articles: articles,
+		})
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(articles)
+	}
+	if err != nil {
+		log.Println("encoding fail:", err)
+		writeError(w, http.StatusInternalServerError, "encoding fail")
+	}
 }
 
 func (s *server) deleteArticlesHandler(w http.ResponseWriter, r *http.Request) {
